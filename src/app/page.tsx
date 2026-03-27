@@ -137,17 +137,48 @@ export default function Home() {
 
       if (!brainstormDirections.length) throw new Error('No directions generated');
 
-      // Step 3: Generate images
+      // Step 3: Generate images (streaming)
       setCurrentPhase('generating');
       setProgress(68);
+      let directionsWithImages: Direction[] = brainstormDirections.map(d => ({ ...d, images: [] }));
+      
       const generateRes = await fetch('/api/council/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ directions: brainstormDirections, brief: sBrief }),
       });
-      const generateData = await generateRes.json();
-      if (!generateRes.ok) throw new Error(generateData.error);
-      const directionsWithImages: Direction[] = generateData.directions;
+
+      if (!generateRes.ok) throw new Error('Failed to generate images');
+
+      const genReader = generateRes.body?.getReader();
+      const genDecoder = new TextDecoder();
+      if (genReader) {
+        let genBuffer = '';
+        while (true) {
+          const { done, value } = await genReader.read();
+          if (done) break;
+          genBuffer += genDecoder.decode(value, { stream: true });
+          const genLines = genBuffer.split('\n');
+          genBuffer = genLines.pop() || '';
+          for (const line of genLines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'direction_start') {
+                setProgress(68 + Math.round((event.index / event.total) * 17));
+              } else if (event.type === 'direction_complete') {
+                directionsWithImages = directionsWithImages.map(d =>
+                  d.name === event.name ? { ...d, images: event.images } : d
+                );
+              } else if (event.type === 'complete') {
+                directionsWithImages = event.directions;
+              } else if (event.type === 'error') {
+                throw new Error(event.message);
+              }
+            } catch {}
+          }
+        }
+      }
       setProgress(85);
 
       // Step 4: Evaluate

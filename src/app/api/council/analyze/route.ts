@@ -1,3 +1,4 @@
+export const maxDuration = 60;
 import { NextRequest, NextResponse } from 'next/server';
 import { callClaudeJSON } from '@/lib/anthropic';
 import { StructuredBrief } from '@/types';

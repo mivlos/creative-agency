@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { generateImagesParallel } from '@/lib/fal';
-import { Direction, StructuredBrief } from '@/types';
+import { NextRequest } from 'next/server';
+import { generateImage } from '@/lib/fal';
+import { Direction } from '@/types';
+
+export const maxDuration = 60;
 
 const STYLE_ROTATION: ('digital_illustration' | 'realistic_image' | 'any')[] = [
   'realistic_image',
@@ -11,40 +13,82 @@ const STYLE_ROTATION: ('digital_illustration' | 'realistic_image' | 'any')[] = [
 ];
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const directions: Direction[] = body.directions;
-    const _brief: StructuredBrief = body.brief;
+  const body = await request.json();
+  const directions: Direction[] = body.directions;
 
-    if (!directions?.length) {
-      return NextResponse.json({ error: 'Directions are required' }, { status: 400 });
-    }
+  if (!directions?.length) {
+    return new Response(JSON.stringify({ error: 'Directions are required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-    // Generate images for all directions in parallel
-    const directionResults = await Promise.all(
-      directions.map(async (direction, dirIndex) => {
-        const style = STYLE_ROTATION[dirIndex % STYLE_ROTATION.length];
-        const promptsWithStyle = direction.prompts.slice(0, 4).map(prompt => ({
-          prompt,
-          style,
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      try {
+        const allDirectionResults: Record<string, { url: string; style: string; prompt: string }[]> = {};
+
+        // Process directions sequentially but images within a direction in parallel
+        // This keeps within timeout while still being fast
+        for (let dirIndex = 0; dirIndex < directions.length; dirIndex++) {
+          const direction = directions[dirIndex];
+          const style = STYLE_ROTATION[dirIndex % STYLE_ROTATION.length];
+          const prompts = direction.prompts.slice(0, 3); // Cap at 3 per direction for speed
+
+          send({ type: 'direction_start', name: direction.name, index: dirIndex, total: directions.length });
+
+          // Generate all images for this direction in parallel
+          const results = await Promise.allSettled(
+            prompts.map(prompt => generateImage(prompt, style))
+          );
+
+          const images = results
+            .map((r, i) => {
+              if (r.status === 'fulfilled') {
+                return { ...r.value, prompt: prompts[i] };
+              }
+              console.error(`Image gen failed for direction ${dirIndex}, prompt ${i}:`, r.reason);
+              return null;
+            })
+            .filter((r): r is { url: string; style: string; prompt: string } => r !== null);
+
+          allDirectionResults[direction.name] = images;
+
+          send({
+            type: 'direction_complete',
+            name: direction.name,
+            index: dirIndex,
+            images,
+          });
+        }
+
+        // Send final combined result
+        const finalDirections = directions.map(d => ({
+          ...d,
+          images: allDirectionResults[d.name] || [],
         }));
 
-        const images = await generateImagesParallel(promptsWithStyle);
+        send({ type: 'complete', directions: finalDirections });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        send({ type: 'error', message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
 
-        return {
-          ...direction,
-          images: images.map(img => ({
-            url: img.url,
-            style: img.style,
-            prompt: img.prompt,
-          })),
-        };
-      })
-    );
-
-    return NextResponse.json({ directions: directionResults });
-  } catch (error) {
-    console.error('Generate error:', error);
-    return NextResponse.json({ error: 'Failed to generate images' }, { status: 500 });
-  }
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }
