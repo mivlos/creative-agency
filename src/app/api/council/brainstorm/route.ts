@@ -174,19 +174,33 @@ References: ${brief.references || 'None specified'}`;
 
         if (allDirections.length === 0) throw new Error('All council members failed');
 
-        // Synthesis
-        sendEvent('synthesis_start', { message: 'Council synthesising top directions...' });
+        // Quick synthesis: collect all directions, deduplicate by name, take top 5 by diversity
+        // No extra API call — saves 10-15s and avoids timeout
+        sendEvent('synthesis_start', { message: 'Consolidating top directions...' });
 
-        const synthesisInput = roles.map((role, i) => 
-          `## ${emojis[role]} ${role}'s Proposals:\n${JSON.stringify(allDirections[i].directions, null, 2)}`
-        ).join('\n\n');
+        const allProposals: Direction[] = [];
+        const roleNames = ['Art Director', 'Strategist', 'Researcher', 'Provocateur'];
+        for (let i = 0; i < allDirections.length; i++) {
+          for (const d of allDirections[i].directions) {
+            allProposals.push({
+              ...d,
+              champion: roleNames[i] || 'Council',
+            });
+          }
+        }
 
-        const finalDirections = await callClaudeJSON<{ directions: Direction[] }>(
-          SYNTHESIS_PROMPT,
-          `${briefText}\n\n--- COUNCIL PROPOSALS ---\n\n${synthesisInput}`
-        );
+        // Deduplicate similar names and take up to 5
+        const seen = new Set<string>();
+        const finalDirections: Direction[] = [];
+        for (const d of allProposals) {
+          const key = d.name.toLowerCase().replace(/[^a-z]/g, '');
+          if (!seen.has(key) && finalDirections.length < 5) {
+            seen.add(key);
+            finalDirections.push(d);
+          }
+        }
 
-        sendEvent('complete', { directions: finalDirections.directions });
+        sendEvent('complete', { directions: finalDirections });
         controller.close();
       } catch (error) {
         console.error('Brainstorm error:', error);
