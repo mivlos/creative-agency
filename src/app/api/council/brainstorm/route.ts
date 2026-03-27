@@ -142,26 +142,37 @@ References: ${brief.references || 'None specified'}`;
       };
 
       try {
-        const allDirections: { directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }[] = [];
         const roles = ['Art Director', 'Strategist', 'Researcher', 'Provocateur'];
         const emojis: Record<string, string> = { 'Art Director': '🎨', 'Strategist': '🧠', 'Researcher': '🔬', 'Provocateur': '🔥' };
 
+        // Show all members starting
         for (const role of roles) {
           sendEvent('council_member_start', { role, emoji: emojis[role] });
-
-          const result = await callClaudeJSON<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }>(
-            ROLE_PROMPTS[role],
-            briefText
-          );
-
-          allDirections.push(result);
-          sendEvent('council_member_complete', {
-            role,
-            emoji: emojis[role],
-            directions: result.directions.map(d => d.name),
-            thinking: result.directions.map(d => `${d.name}: ${d.concept}`).join(' | '),
-          });
         }
+
+        // Run ALL 4 council members in PARALLEL
+        const results = await Promise.allSettled(
+          roles.map(role =>
+            callClaudeJSON<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }>(
+              ROLE_PROMPTS[role],
+              briefText
+            ).then(result => {
+              sendEvent('council_member_complete', {
+                role,
+                emoji: emojis[role],
+                directions: result.directions.map(d => d.name),
+                thinking: result.directions.map(d => `${d.name}: ${d.concept}`).join(' | '),
+              });
+              return result;
+            })
+          )
+        );
+
+        const allDirections = results
+          .filter((r): r is PromiseFulfilledResult<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }> => r.status === 'fulfilled')
+          .map(r => r.value);
+
+        if (allDirections.length === 0) throw new Error('All council members failed');
 
         // Synthesis
         sendEvent('synthesis_start', { message: 'Council synthesising top directions...' });
