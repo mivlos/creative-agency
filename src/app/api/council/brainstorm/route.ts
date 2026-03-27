@@ -1,4 +1,4 @@
-export const maxDuration = 60;
+export const maxDuration = 300;
 import { NextRequest } from 'next/server';
 import { callClaudeJSON } from '@/lib/anthropic';
 import { StructuredBrief, Direction } from '@/types';
@@ -145,62 +145,50 @@ References: ${brief.references || 'None specified'}`;
         const roles = ['Art Director', 'Strategist', 'Researcher', 'Provocateur'];
         const emojis: Record<string, string> = { 'Art Director': '🎨', 'Strategist': '🧠', 'Researcher': '🔬', 'Provocateur': '🔥' };
 
-        // Show all members starting
+        // Run council members SEQUENTIALLY so SSE shows each completing one by one
+        const allDirections: { directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }[] = [];
+
         for (const role of roles) {
           sendEvent('council_member_start', { role, emoji: emojis[role] });
-        }
 
-        // Run ALL 4 council members in PARALLEL
-        const results = await Promise.allSettled(
-          roles.map(role =>
-            callClaudeJSON<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }>(
+          try {
+            const result = await callClaudeJSON<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }>(
               ROLE_PROMPTS[role],
               briefText
-            ).then(result => {
-              sendEvent('council_member_complete', {
-                role,
-                emoji: emojis[role],
-                directions: result.directions.map(d => d.name),
-                thinking: result.directions.map(d => `${d.name}: ${d.concept}`).join(' | '),
-              });
-              return result;
-            })
-          )
-        );
+            );
 
-        const allDirections = results
-          .filter((r): r is PromiseFulfilledResult<{ directions: { name: string; concept: string; prompts: string[]; rationale: string; risks: string }[] }> => r.status === 'fulfilled')
-          .map(r => r.value);
+            sendEvent('council_member_complete', {
+              role,
+              emoji: emojis[role],
+              directions: result.directions.map(d => d.name),
+              thinking: result.directions.map(d => `${d.name}: ${d.concept}`).join(' | '),
+            });
+
+            allDirections.push(result);
+          } catch (err) {
+            console.error(`Council member ${role} failed:`, err);
+            // Continue with other members even if one fails
+          }
+        }
 
         if (allDirections.length === 0) throw new Error('All council members failed');
 
-        // Quick synthesis: collect all directions, deduplicate by name, take top 5 by diversity
-        // No extra API call — saves 10-15s and avoids timeout
-        sendEvent('synthesis_start', { message: 'Consolidating top directions...' });
+        // Proper Claude synthesis to consolidate to top 5 with refined prompts
+        sendEvent('synthesis_start', { message: 'Synthesising top directions...' });
 
-        const allProposals: Direction[] = [];
-        const roleNames = ['Art Director', 'Strategist', 'Researcher', 'Provocateur'];
-        for (let i = 0; i < allDirections.length; i++) {
-          for (const d of allDirections[i].directions) {
-            allProposals.push({
-              ...d,
-              champion: roleNames[i] || 'Council',
-            });
-          }
-        }
+        const allProposalsText = allDirections.map((memberResult, i) => {
+          const roleName = roles[i];
+          return `${roleName}:\n${memberResult.directions.map(d =>
+            `- "${d.name}": ${d.concept}\n  Rationale: ${d.rationale}\n  Risks: ${d.risks}\n  Prompts: ${d.prompts.join(' | ')}`
+          ).join('\n')}`;
+        }).join('\n\n');
 
-        // Deduplicate similar names and take up to 5
-        const seen = new Set<string>();
-        const finalDirections: Direction[] = [];
-        for (const d of allProposals) {
-          const key = d.name.toLowerCase().replace(/[^a-z]/g, '');
-          if (!seen.has(key) && finalDirections.length < 5) {
-            seen.add(key);
-            finalDirections.push(d);
-          }
-        }
+        const synthesis = await callClaudeJSON<{ directions: Direction[] }>(
+          SYNTHESIS_PROMPT,
+          `${briefText}\n\n--- COUNCIL PROPOSALS ---\n\n${allProposalsText}`
+        );
 
-        sendEvent('complete', { directions: finalDirections });
+        sendEvent('complete', { directions: synthesis.directions });
         controller.close();
       } catch (error) {
         console.error('Brainstorm error:', error);

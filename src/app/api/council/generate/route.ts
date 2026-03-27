@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { generateImage } from '@/lib/fal';
 import { Direction } from '@/types';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const STYLE_ROTATION: ('digital_illustration' | 'realistic_image' | 'any')[] = [
   'realistic_image',
@@ -32,40 +32,48 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const allDirectionResults: Record<string, { url: string; style: string; prompt: string }[]> = {};
-
-        // Process directions sequentially but images within a direction in parallel
-        // This keeps within timeout while still being fast
+        // Signal all directions starting
         for (let dirIndex = 0; dirIndex < directions.length; dirIndex++) {
-          const direction = directions[dirIndex];
-          const style = STYLE_ROTATION[dirIndex % STYLE_ROTATION.length];
-          const prompts = direction.prompts.slice(0, 3); // Cap at 3 per direction for speed
+          send({ type: 'direction_start', name: directions[dirIndex].name, index: dirIndex, total: directions.length });
+        }
 
-          send({ type: 'direction_start', name: direction.name, index: dirIndex, total: directions.length });
+        // Generate ALL directions in parallel (300s timeout allows this)
+        const directionResults = await Promise.allSettled(
+          directions.map(async (direction, dirIndex) => {
+            const style = STYLE_ROTATION[dirIndex % STYLE_ROTATION.length];
+            const prompts = direction.prompts.slice(0, 4); // 4 images per direction = 20 total
 
-          // Generate all images for this direction in parallel
-          const results = await Promise.allSettled(
-            prompts.map(prompt => generateImage(prompt, style))
-          );
+            const results = await Promise.allSettled(
+              prompts.map(prompt => generateImage(prompt, style))
+            );
 
-          const images = results
-            .map((r, i) => {
-              if (r.status === 'fulfilled') {
-                return { ...r.value, prompt: prompts[i] };
-              }
-              console.error(`Image gen failed for direction ${dirIndex}, prompt ${i}:`, r.reason);
-              return null;
-            })
-            .filter((r): r is { url: string; style: string; prompt: string } => r !== null);
+            const images = results
+              .map((r, i) => {
+                if (r.status === 'fulfilled') {
+                  return { ...r.value, prompt: prompts[i] };
+                }
+                console.error(`Image gen failed for direction ${dirIndex}, prompt ${i}:`, r.reason);
+                return null;
+              })
+              .filter((r): r is { url: string; style: string; prompt: string } => r !== null);
 
-          allDirectionResults[direction.name] = images;
+            send({
+              type: 'direction_complete',
+              name: direction.name,
+              index: dirIndex,
+              images,
+            });
 
-          send({
-            type: 'direction_complete',
-            name: direction.name,
-            index: dirIndex,
-            images,
-          });
+            return { name: direction.name, images };
+          })
+        );
+
+        // Build final directions map
+        const allDirectionResults: Record<string, { url: string; style: string; prompt: string }[]> = {};
+        for (const result of directionResults) {
+          if (result.status === 'fulfilled') {
+            allDirectionResults[result.value.name] = result.value.images;
+          }
         }
 
         // Send final combined result

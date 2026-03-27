@@ -1,16 +1,19 @@
 {
   "functions": {
     "src/app/api/council/brainstorm/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "src/app/api/council/generate/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "src/app/api/council/evaluate/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "src/app/api/council/refine/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
+    },
+    "src/app/api/council/analyze/route.ts": {
+      "maxDuration": 300
     }
   }
 }
