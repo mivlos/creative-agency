@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { COUNCIL_MEMBERS } from '@/types';
 
@@ -24,6 +25,97 @@ const PHASE_LABELS: Record<string, string> = {
   generating: 'Generating visual explorations...',
   evaluating: 'Evaluating directions...',
 };
+
+const CREATIVE_QUOTES = [
+  { text: "Design is not just what it looks like. Design is how it works.", author: "Steve Jobs" },
+  { text: "Have no fear of perfection — you'll never reach it.", author: "Salvador Dalí" },
+  { text: "Creativity takes courage.", author: "Henri Matisse" },
+  { text: "The chief enemy of creativity is good sense.", author: "Pablo Picasso" },
+  { text: "Design is thinking made visual.", author: "Saul Bass" },
+  { text: "To create, one must first question everything.", author: "Eileen Gray" },
+  { text: "Good design is obvious. Great design is transparent.", author: "Joe Sparano" },
+  { text: "Art is not what you see, but what you make others see.", author: "Edgar Degas" },
+];
+
+const EVAL_CRITERIA = [
+  'Visual impact & composition',
+  'Brand coherence & strategy',
+  'Audience relevance',
+  'Originality & differentiation',
+  'Technical execution',
+  'Emotional resonance',
+  'Scalability & versatility',
+];
+
+function RotatingQuotes() {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex(i => (i + 1) % CREATIVE_QUOTES.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="text-center mb-8 h-24 flex flex-col items-center justify-center">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={index}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.6 }}
+          className="max-w-lg"
+        >
+          <p className="text-white/70 text-lg italic font-[family-name:var(--font-display)]">
+            &ldquo;{CREATIVE_QUOTES[index].text}&rdquo;
+          </p>
+          <p className="text-amber/60 text-sm mt-2">— {CREATIVE_QUOTES[index].author}</p>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function GenerativeShape() {
+  return (
+    <div className="flex items-center justify-center my-6">
+      <div className="generative-shape" />
+    </div>
+  );
+}
+
+function EvaluationAnimation() {
+  const [visibleCriteria, setVisibleCriteria] = useState<number[]>([]);
+
+  useEffect(() => {
+    EVAL_CRITERIA.forEach((_, i) => {
+      setTimeout(() => {
+        setVisibleCriteria(prev => [...prev, i]);
+      }, i * 150);
+    });
+  }, []);
+
+  return (
+    <div className="w-full max-w-md mx-auto space-y-2">
+      {EVAL_CRITERIA.map((criterion, i) => (
+        <AnimatePresence key={i}>
+          {visibleCriteria.includes(i) && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex items-center gap-3 text-sm"
+            >
+              <span className="text-green-400">✅</span>
+              <span className="text-white/60">{criterion}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      ))}
+    </div>
+  );
+}
 
 export default function CouncilWorking({ events, currentPhase, progress }: CouncilWorkingProps) {
   return (
@@ -120,6 +212,29 @@ export default function CouncilWorking({ events, currentPhase, progress }: Counc
           );
         })}
       </div>
+
+      {/* Creative quotes + generative shape during generation */}
+      {(currentPhase === 'generating' || currentPhase === 'brainstorming') && (
+        <div className="w-full max-w-2xl">
+          <RotatingQuotes />
+          <GenerativeShape />
+        </div>
+      )}
+
+      {/* Evaluation animation */}
+      {currentPhase === 'evaluating' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-2xl bg-bg-card border border-amber/30 rounded-xl p-6 mb-8"
+        >
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <span className="w-2 h-2 bg-amber rounded-full pulse-amber" />
+            <span className="text-amber font-semibold text-sm">Evaluating Directions</span>
+          </div>
+          <EvaluationAnimation />
+        </motion.div>
+      )}
 
       {/* Synthesis indicator */}
       <AnimatePresence>

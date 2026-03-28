@@ -1,12 +1,51 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { EXAMPLE_BRIEFS } from '@/types';
+
+const INSPIRATION_LINES = [
+  "What if your next brand identity was designed by a council of AI strategists?",
+  "How would 4 creative perspectives approach your next campaign?",
+  "What happens when an art director, strategist, researcher, and provocateur collaborate?",
+  "Imagine briefing a creative team that never sleeps and always disagrees productively.",
+];
 
 interface BriefInputProps {
   onSubmit: (brief: string, brandColours: string[], constraints: string[]) => void;
   isLoading: boolean;
+}
+
+function InspirationLine() {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex(i => (i + 1) % INSPIRATION_LINES.length);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.3 }}
+      className="h-8 flex items-center justify-center mb-6"
+    >
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={index}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.5 }}
+          className="text-sm text-white/30 italic text-center"
+        >
+          {INSPIRATION_LINES[index]}
+        </motion.p>
+      </AnimatePresence>
+    </motion.div>
+  );
 }
 
 export default function BriefInput({ onSubmit, isLoading }: BriefInputProps) {
@@ -49,6 +88,9 @@ export default function BriefInput({ onSubmit, isLoading }: BriefInputProps) {
         </p>
       </motion.div>
 
+      {/* Rotating inspiration line */}
+      <InspirationLine />
+
       {/* Input Area */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -75,7 +117,7 @@ export default function BriefInput({ onSubmit, isLoading }: BriefInputProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5 + i * 0.08, duration: 0.4 }}
               onClick={() => setBrief(example)}
-              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-sm text-white/60 hover:text-amber hover:border-amber/30 transition-all"
+              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-sm text-white/60 hover:text-amber hover:border-amber/30 transition-all shimmer-chip"
             >
               {example}
             </motion.button>
