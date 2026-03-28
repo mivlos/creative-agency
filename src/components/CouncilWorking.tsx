@@ -150,6 +150,13 @@ export default function CouncilWorking({ events, currentPhase, progress }: Counc
         <p className="text-right text-xs text-white/30 mt-1">{Math.round(progress)}%</p>
       </div>
 
+      {/* Creative quotes — between progress bar and council grid */}
+      {(currentPhase === 'generating' || currentPhase === 'brainstorming') && (
+        <div className="w-full max-w-2xl mb-8">
+          <RotatingQuotes />
+        </div>
+      )}
+
       {/* Council Members Grid */}
       <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         {COUNCIL_MEMBERS.map((member, i) => {
@@ -213,10 +220,9 @@ export default function CouncilWorking({ events, currentPhase, progress }: Counc
         })}
       </div>
 
-      {/* Creative quotes + generative shape during generation */}
+      {/* Generative shape during generation */}
       {(currentPhase === 'generating' || currentPhase === 'brainstorming') && (
         <div className="w-full max-w-2xl">
-          <RotatingQuotes />
           <GenerativeShape />
         </div>
       )}
